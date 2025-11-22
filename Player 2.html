@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Shuffle & Crossfade Player</title>
+<style>
+  html, body {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    background: url("video.gif") no-repeat center center fixed;
+    background-size: cover;
+    font-family: Arial, sans-serif;
+    color: white;
+    text-shadow: 1px 1px 3px black;
+  }
+
+  h2 { margin-bottom: 10px; }
+
+  #nowPlaying {
+    margin-bottom: 10px;
+    font-size: 20px;
+    font-weight: bold;
+  }
+
+  #progressBar, #volumeBar {
+    width: 320px;
+    margin-bottom: 12px;
+  }
+
+  .controls {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  button {
+    padding: 10px 16px;
+    font-size: 16px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    background-color: rgba(0,0,0,0.6);
+    color: white;
+    transition: background 0.2s;
+  }
+  button:hover { background-color: rgba(255,255,255,0.12); }
+
+  .player {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 18px;
+    background-color: rgba(0,0,0,0.25);
+    border-radius: 12px;
+  }
+</style>
+</head>
+<body>
+  <div class="player">
+    <h2>Shuffle & Crossfade Player</h2>
+    <div id="nowPlaying">Now Playing: –</div>
+
+    <input type="range" id="progressBar" min="0" max="100" value="0">
+
+    <!-- Volume Slider -->
+    <label>Volume</label>
+    <input type="range" id="volumeBar" min="0" max="100" value="100">
+
+    <div class="controls">
+      <button onclick="prevTrack()">⏮ Back</button>
+      <button id="playPauseBtn" onclick="togglePlayPause()">▶ Play</button>
+      <button onclick="nextTrack()">⏭ Skip</button>
+      <button id="shuffleBtn" onclick="toggleShuffle()">🔁 Shuffle Off</button>
+    </div>
+  </div>
+
+<script>
+/* ------------- playlist ------------- */
+const tracks = [
+  "Moment of peace.wav",
+  "The road is full of opportunities.wav",
+  "Battle theme.wav",
+  "Victory is sweet when sunny.wav",
+  "Sale! Sale! Sale!.wav",
+  "Defeat stings when it rains.wav",
+  "Unreedemable Evil.wav"
+];
+
+/* ------------- audio objects and state ------------- */
+let audio1 = new Audio();
+let audio2 = new Audio();
+let current = audio1;
+let next = audio2;
+
+let currentIndex = 0;
+let isPlaying = false;
+let isFading = false;
+let shuffle = false;  // 🔹 NEW SHUFFLE FLAG
+
+const progressBar = document.getElementById('progressBar');
+const volumeBar = document.getElementById('volumeBar');
+const playPauseBtn = document.getElementById('playPauseBtn');
+const shuffleBtn = document.getElementById('shuffleBtn');
+
+current.src = tracks[currentIndex];
+current.volume = 1;
+updateNowPlaying();
+
+/* ---------- clean file name ---------- */
+function cleanName(filename) {
+  return filename.split('/').pop().replace(/\.[^/.]+$/, "");
+}
+function updateNowPlaying() {
+  document.getElementById("nowPlaying").innerText =
+    "Now Playing: " + cleanName(tracks[currentIndex]);
+}
+
+/* ---------- timeupdate handler ---------- */
+function onTimeUpdate() {
+  if (this !== current) return;
+  if (current.duration && !isNaN(current.duration)) {
+    progressBar.value = (current.currentTime / current.duration) * 100;
+    if (!isFading && (current.duration - current.currentTime) <= 6) {
+      current.removeEventListener('timeupdate', onTimeUpdate);
+      nextTrack();
+    }
+  }
+}
+
+function attachCurrentWatchers() {
+  current.removeEventListener('timeupdate', onTimeUpdate);
+  current.addEventListener('timeupdate', onTimeUpdate);
+}
+
+function detachWatchersFrom(elem) {
+  elem.removeEventListener('timeupdate', onTimeUpdate);
+}
+
+/* ---------- SHUFFLE TOGGLE ---------- */
+function toggleShuffle() {
+  shuffle = !shuffle;
+  shuffleBtn.innerText = shuffle ? "🔀 Shuffle On" : "🔁 Shuffle Off";
+}
+
+/* ---------- CROSSFADE ---------- */
+function crossfadeTo(index) {
+  if (isFading) return;
+  isFading = true;
+
+  detachWatchersFrom(current);
+  detachWatchersFrom(next);
+
+  next.src = tracks[index];
+  next.volume = 0;
+  next.play().catch(()=>{});
+
+  isPlaying = true;
+  playPauseBtn.innerText = "⏸ Pause";
+
+  const fadeSteps = 60;
+  let step = 0;
+  const fadeTimer = setInterval(() => {
+    step++;
+    const t = step / fadeSteps;
+    current.volume = Math.max(0, 1 - t);
+    next.volume = Math.min(1, t);
+
+    if (step >= fadeSteps) {
+      clearInterval(fadeTimer);
+      current.pause();
+
+      [current, next] = [next, current];
+      currentIndex = index;
+      updateNowPlaying();
+
+      attachCurrentWatchers();
+      isFading = false;
+    }
+  }, 100);
+}
+
+/* ---------- NEXT & PREVIOUS ---------- */
+function nextTrack() {
+  let newIndex;
+
+  if (shuffle) {
+    // random track but not the same one
+    do {
+      newIndex = Math.floor(Math.random() * tracks.length);
+    } while (newIndex === currentIndex);
+  } else {
+    newIndex = (currentIndex + 1) % tracks.length;
+  }
+
+  crossfadeTo(newIndex);
+}
+
+function prevTrack() {
+  const newIndex = (currentIndex - 1 + tracks.length) % tracks.length;
+  crossfadeTo(newIndex);
+}
+
+/* ---------- PLAY / PAUSE ---------- */
+function togglePlayPause() {
+  if (isPlaying) {
+    current.pause();
+    isPlaying = false;
+    playPauseBtn.innerText = "▶ Play";
+  } else {
+    current.play().catch(()=>{});
+    isPlaying = true;
+    playPauseBtn.innerText = "⏸ Pause";
+    attachCurrentWatchers();
+  }
+}
+
+/* ---------- PROGRESS SEEK ---------- */
+progressBar.addEventListener('input', () => {
+  if (current.duration) {
+    current.currentTime = (progressBar.value / 100) * current.duration;
+  }
+});
+
+/* ---------- VOLUME CONTROL ---------- */
+volumeBar.addEventListener('input', () => {
+  const vol = volumeBar.value / 100;
+  current.volume = vol;
+  next.volume = vol;
+});
+
+/* initial watcher */
+attachCurrentWatchers();
+
+</script>
+</body>
+</html>
